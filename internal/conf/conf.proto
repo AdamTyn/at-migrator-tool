@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+option go_package = "at-migrator-tool/internal/conf;conf";
+
+message App {
+  Server server = 1;
+  Data data = 2;
+  Migrator migrator = 3;
+  Webhook webhook = 4;
+  string name = 10;
+}
+
+message Server {
+  message HTTP {
+    string endpoint = 1;
+    int32 timeout = 2;
+  }
+  HTTP http = 1;
+}
+
+message Data {
+  message Database {
+    string driver = 1;
+    string dsn = 2;
+  }
+  message Redis {
+    string addr = 1;
+    string password = 2;
+    int32 db = 3;
+  }
+  Database source = 1;
+  Database target = 2;
+  Redis redis = 3;
+}
+
+message Migrator {
+  message OperateRecord {
+    int64 fetch_step = 1; // 每次数据源查询id的步长
+    int64 max_empty_fetch_num = 2; // 最大数据源空查询次数
+  }
+  OperateRecord operate_record = 1;
+}
+
+message Webhook {
+  string fs_robot = 1;
+}
