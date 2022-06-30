@@ -1,0 +1,33 @@
+{
+  "name": "at-migrator-tool",
+  "server": {
+    "http": {
+      "endpoint": "0.0.0.0:9000",
+      "timeout": 10
+    }
+  },
+  "data": {
+    "source": {
+      "driver": "postgres",
+      "dsn": "dbname=test user=test password=test host=test.com port=1234 sslmode=disable options='-c statement_timeout=5000'"
+    },
+    "target": {
+      "driver": "postgres",
+      "dsn": "dbname=test user=test password=test host=test.com port=1234 sslmode=disable options='-c statement_timeout=5000'"
+    },
+    "redis": {
+      "addr": "test.cn:1234",
+      "password": "123456",
+      "db": 1
+    }
+  },
+  "migrator": {
+    "operate_record": {
+      "fetch_step": 10000,
+      "max_empty_fetch_num": 100
+    }
+  },
+  "webhook": {
+    "fs_robot": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxxxxxxx"
+  }
+}
