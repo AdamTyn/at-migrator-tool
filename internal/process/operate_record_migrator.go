@@ -87,6 +87,13 @@ func (m *OperateRecordMigrator) collectors() {
 	// 在外部使用Add方法添加
 }
 
+func (m OperateRecordMigrator) collector(name string) contract.Collector {
+	if c, ok := m.Cs[name]; ok {
+		return c
+	}
+	return &col.DefaultCollector{}
+}
+
 /**
  * OperateRecordMigrator.loadLatestRowId
  * @author ctc
@@ -165,19 +172,19 @@ func (m *OperateRecordMigrator) fetch() {
 			tt := ent.TargetType.String
 			switch tt {
 			case pkg.OperateRecordTargetType1:
-				err = m.Cs[col.InternOLogCollectorName].Put(&ent)
+				err = m.collector(col.InternOLogCollectorName).Put(&ent)
 			case pkg.OperateRecordTargetType2:
-				err = m.Cs[col.CompanyOLogCollectorName].Put(&ent)
+				err = m.collector(col.CompanyOLogCollectorName).Put(&ent)
 			case pkg.OperateRecordTargetType3:
-				err = m.Cs[col.DeliveryOLogCollectorName].Put(&ent)
+				err = m.collector(col.DeliveryOLogCollectorName).Put(&ent)
 			default:
 				// 需要记录这一部分id到redis
-				err = m.Cs[col.BadDataCollectorName].Put(&ent.ID)
+				err = m.collector(col.BadDataCollectorName).Put(&ent)
 			}
 			if err != nil {
 				// 需要记录这一部分id到redis
 				m.app.Logf("[Exception] OperateRecordMigrator->fetch->Put: %s\n", err.Error())
-				_ = m.Cs[col.BadDataCollectorName].Put(&ent.ID)
+				_ = m.collector(col.BadDataCollectorName).Put(&ent.ID)
 			}
 		}
 		// 判断是否空查询
