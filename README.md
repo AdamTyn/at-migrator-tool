@@ -41,4 +41,5 @@
      ```
 
 3. 子文档
+   - [config](docs/config.md)
    - [operate-record-migrator](docs/operate_record_migrator.md)
