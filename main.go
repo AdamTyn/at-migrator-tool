@@ -6,10 +6,12 @@ import (
 	"at-migrator-tool/internal/conf"
 	"at-migrator-tool/internal/pkg"
 	"at-migrator-tool/internal/process"
+	_ "embed"
 	"encoding/json"
-	"io/ioutil"
-	"os"
 )
+
+//go:embed config.json
+var configByte []byte
 
 func main() {
 	appC := getAppConfig()
@@ -27,30 +29,31 @@ func main() {
 		_ = rd.Close()
 	}()
 
+	badDataCollector := col.NewBadDataCollector(500, rd)
+	fsRobotCollector := col.NewFsRobotCollector(3, appC.Webhook)
+
 	operateRecordMigrator := process.NewOperateRecordMigrator(app, pg1, rd)
 	operateRecordMigrator.
-		Add(col.NewCompanyOLogCollector(1000, pg2, app.Logger)).
-		Add(col.NewDeliveryOLogCollector(5000, pg2, app.Logger)).
-		Add(col.NewInternOLogCollector(5000, pg2, app.Logger)).
-		Add(col.NewBadDataCollector(500, rd, app.Logger)).
-		Add(col.NewFsRobotCollector(3, appC.Webhook, app.Logger))
-	app.Add(operateRecordMigrator).
-		Go()
+		Add(col.NewCompanyOLogCollector(5000, pg2)).
+		Add(col.NewDeliveryOLogCollector(5000, pg2)).
+		Add(col.NewInternOLogCollector(5000, pg2)).
+		Add(badDataCollector).
+		Add(fsRobotCollector)
+	app.Add(operateRecordMigrator)
+
+	deliverUncheckMigrator := process.NewDeliverUncheckMigrator(app, pg1, pg1, rd)
+	deliverUncheckMigrator.
+		Add(col.NewDeliverUncheckCollector(8000, pg1)).
+		Add(badDataCollector).
+		Add(fsRobotCollector)
+	app.Add(deliverUncheckMigrator)
+
+	app.Go()
 }
 
 func getAppConfig() *conf.App {
-	fb, err := os.Open("../config.json")
-	if err != nil {
-		panic(err)
-	}
-	defer fb.Close()
-	var bytes []byte
-	bytes, err = ioutil.ReadAll(fb)
-	if err != nil {
-		panic(err)
-	}
 	var appC conf.App
-	err = json.Unmarshal(bytes, &appC)
+	err := json.Unmarshal(configByte, &appC)
 	if err != nil {
 		panic(err)
 	}

@@ -23,8 +23,15 @@
   },
   "migrator": {
     "operate_record": {
-      "fetch_step": 10000,
+      "enable": false,
+      "fetch_step": 40000,
       "max_empty_fetch_num": 100
+    },
+    "deliver_uncheck": {
+      "enable": false,
+      "truncate_first": false,
+      "fetch_step": 40000,
+      "max_empty_fetch_num": 10
     }
   },
   "webhook": {

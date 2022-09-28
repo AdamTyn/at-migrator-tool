@@ -17,12 +17,12 @@ config:
 .PHONY: run
 # go run main.go
 run:
-	cd ./cmd && go run .
+	go run .
 
 .PHONY: build
 # go build main.go
 build:
-	cd ./cmd && go build -o ../bin/at-migrator-tool .
+	go build -o bin/at-migrator-tool .
 
 # show help
 help:

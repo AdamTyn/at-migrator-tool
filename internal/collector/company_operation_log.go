@@ -3,10 +3,10 @@ package collector
 import (
 	"at-migrator-tool/internal/entity"
 	"at-migrator-tool/internal/pkg"
+	"at-migrator-tool/internal/pkg/log"
 	"bytes"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -23,14 +23,12 @@ type CompanyOLogCollector struct {
 	tunnel chan *entity.CompanyOperationLog
 	db     *sql.DB
 	size   int // 采集器最大缓存数
-	logger *log.Logger
 }
 
-func NewCompanyOLogCollector(size int, db *sql.DB, logger *log.Logger) *CompanyOLogCollector {
+func NewCompanyOLogCollector(size int, db *sql.DB) *CompanyOLogCollector {
 	return &CompanyOLogCollector{
 		tunnel: make(chan *entity.CompanyOperationLog, size+1),
 		db:     db,
-		logger: logger,
 		size:   size,
 		data:   make([]*entity.CompanyOperationLog, 0, size),
 	}
@@ -42,7 +40,7 @@ func (c CompanyOLogCollector) Name() string {
 
 func (c *CompanyOLogCollector) Listen() {
 	// 每d秒落库1次
-	d := 10 * time.Second
+	d := 5 * time.Second
 	ticker := time.NewTicker(d)
 	defer ticker.Stop()
 	for {
@@ -88,7 +86,7 @@ func (c *CompanyOLogCollector) flush() {
 	}
 	_, err := c.db.Exec(buf.String())
 	if err != nil {
-		c.logger.Printf("[Exception] CompanyOLogCollector->flush: %s\n", err.Error())
+		log.ExceptionF("CompanyOLogCollector->flush: %s", err.Error())
 	}
 	c.data = c.data[0:0:c.size]
 }
@@ -106,8 +104,9 @@ func (c *CompanyOLogCollector) Put(in interface{}) error {
 }
 
 func (c *CompanyOLogCollector) Close() {
-	if !c.closed {
+	var old bool
+	old, c.closed = c.closed, true
+	if !old {
 		close(c.tunnel)
 	}
-	c.closed = true
 }

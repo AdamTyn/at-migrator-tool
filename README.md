@@ -3,9 +3,9 @@
 1. 文件结构梳理
 
     ```txt
-    cmd/main.go # 程序入口文件
+    main.go # 程序入口文件
     doc/... # 存放子文档
-    internal/collector/... # 任务进程会用加载的采集器
+    internal/collector/... # 任务进程会调用的采集器
     internal/conf/... # 解析配置的proto文件
     internal/contract/... # 契约(interface)
     internal/entity/... # 数据库实体
@@ -26,7 +26,7 @@
      ```
    - 编译 *internal/conf/conf.proto* 文件
      
-     ```bashgit
+     ```bash
      make config
      ```
    - 只运行不编译
@@ -39,7 +39,10 @@
      ```bash
      make build
      ```
+3. 流程图
+![流程图](docs/流程图.png)
 
-3. 子文档
+4. 子文档
    - [config](docs/config.md)
+   - [deliver-uncheck-migrator](docs/deliver_uncheck_migrator.md)
    - [operate-record-migrator](docs/operate_record_migrator.md)

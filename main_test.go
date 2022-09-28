@@ -5,6 +5,7 @@ import (
 	col "at-migrator-tool/internal/collector"
 	"at-migrator-tool/internal/process"
 	"testing"
+	"time"
 )
 
 func TestGetAppConfig(t *testing.T) {
@@ -31,8 +32,7 @@ func TestRunHttp(t *testing.T) {
 
 func TestFsRobotCollector(t *testing.T) {
 	appC := getAppConfig()
-	app := internal.NewApp(appC)
-	c := col.NewFsRobotCollector(3, appC.Webhook, app.Logger)
+	c := col.NewFsRobotCollector(3, appC.Webhook)
 	go c.Listen()
 	m := make(map[string]interface{})
 	m["msg_type"] = "text"
@@ -43,7 +43,5 @@ func TestFsRobotCollector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
-		select {}
-	}
+	time.Sleep(10 * time.Second)
 }

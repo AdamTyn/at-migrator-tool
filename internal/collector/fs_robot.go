@@ -3,7 +3,7 @@ package collector
 import (
 	"at-migrator-tool/internal/conf"
 	"at-migrator-tool/internal/pkg"
-	"log"
+	"at-migrator-tool/internal/pkg/log"
 )
 
 const FsRobotCollectorName = "FsRobot"
@@ -17,14 +17,12 @@ type FsRobotCollector struct {
 	closed bool
 	tunnel chan interface{}
 	size   int // 采集器最大缓存数
-	logger *log.Logger
 	Conf   *conf.Webhook
 }
 
-func NewFsRobotCollector(size int, c *conf.Webhook, logger *log.Logger) *FsRobotCollector {
+func NewFsRobotCollector(size int, c *conf.Webhook) *FsRobotCollector {
 	return &FsRobotCollector{
 		tunnel: make(chan interface{}, size+1),
-		logger: logger,
 		size:   size,
 		Conf:   c,
 	}
@@ -40,9 +38,9 @@ func (c *FsRobotCollector) Listen() {
 		case data := <-c.tunnel:
 			reply, err := pkg.JsonPost(c.Conf.FsRobot, data)
 			if err != nil {
-				c.logger.Printf("[Exception] FsRobotCollector->Listen: %s\n", err.Error())
+				log.ExceptionF("FsRobotCollector->Listen: %s", err.Error())
 			} else {
-				c.logger.Printf("[Info] FsRobotCollector->Listen,reply=%s\n", string(reply))
+				log.InfoF("FsRobotCollector->Listen,reply=%s", string(reply))
 			}
 		default:
 			if c.closed {
@@ -61,8 +59,9 @@ func (c *FsRobotCollector) Put(in interface{}) error {
 }
 
 func (c *FsRobotCollector) Close() {
-	if !c.closed {
+	var old bool
+	old, c.closed = c.closed, true
+	if !old {
 		close(c.tunnel)
 	}
-	c.closed = true
 }

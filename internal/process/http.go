@@ -2,6 +2,7 @@ package process
 
 import (
 	"at-migrator-tool/internal"
+	"at-migrator-tool/internal/pkg/log"
 	"context"
 	"net/http"
 	"time"
@@ -32,7 +33,7 @@ func (h *Http) Start() {
 		WriteTimeout: time.Second * time.Duration(h.app.Conf.Server.Http.Timeout),
 		Handler:      mux,
 	}
-	h.app.Logf("[Info] start http server listen: %s\n", h.app.Conf.Server.Http.Endpoint)
+	log.InfoF("start http server listen: [%s]", h.app.Conf.Server.Http.Endpoint)
 	if err := h.server.ListenAndServe(); err != nil {
 		if err != http.ErrServerClosed {
 			panic(err)
@@ -42,5 +43,5 @@ func (h *Http) Start() {
 
 func (h *Http) Shutdown() {
 	_ = h.server.Shutdown(context.Background())
-	h.app.Logf("[Notice] process %s shutdown\n", HttpProcess)
+	log.NoticeF("process [%s] shutdown", HttpProcess)
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 func DB(c *conf.Data_Database) (db *sql.DB) {
@@ -35,4 +36,12 @@ func JsonPost(url string, input interface{}) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	return ioutil.ReadAll(resp.Body)
+}
+
+func Str2Time(s string) time.Time {
+	lt, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.Local)
+	if err != nil {
+		return time.Time{}
+	}
+	return lt
 }

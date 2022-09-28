@@ -1,9 +1,11 @@
 package collector
 
 import (
+	"at-migrator-tool/internal/entity"
 	"at-migrator-tool/internal/pkg"
+	"at-migrator-tool/internal/pkg/log"
+	"fmt"
 	"github.com/go-redis/redis"
-	"log"
 	"time"
 )
 
@@ -16,20 +18,18 @@ const BadDataCollectorName = "BadData"
  */
 type BadDataCollector struct {
 	closed   bool
-	data     []int64
-	tunnel   chan int64
+	data     []*entity.BadData
+	tunnel   chan *entity.BadData
 	size     int // 采集器最大缓存数
-	logger   *log.Logger
 	redisCli *redis.Client
 }
 
-func NewBadDataCollector(size int, redisCli *redis.Client, logger *log.Logger) *BadDataCollector {
+func NewBadDataCollector(size int, redisCli *redis.Client) *BadDataCollector {
 	return &BadDataCollector{
-		tunnel:   make(chan int64, size+1),
+		tunnel:   make(chan *entity.BadData, size+1),
 		redisCli: redisCli,
-		logger:   logger,
 		size:     size,
-		data:     make([]int64, 0, size),
+		data:     make([]*entity.BadData, 0, size),
 	}
 }
 
@@ -68,14 +68,16 @@ func (c *BadDataCollector) flush() {
 	if c.closed || len(c.data) < 1 {
 		return
 	}
-	pipeline := c.redisCli.Pipeline()
+	p := c.redisCli.Pipeline()
+	defer p.Close()
 	for k := range c.data {
-		pipeline.SAdd(pkg.CKORMigratorException, c.data[k])
+		val := fmt.Sprintf(c.data[k].K, c.data[k].V)
+		p.SAdd(pkg.CKBDMigratorException, val)
 	}
-	pipeline.Expire(pkg.CKORMigratorException, pkg.CacheORMigratorExpired)
-	_, err := pipeline.Exec()
+	p.Expire(pkg.CKBDMigratorException, pkg.CacheBDMigratorExpired)
+	_, err := p.Exec()
 	if err != nil {
-		c.logger.Printf("[Exception] BadDataCollector->flush: %s\n", err.Error())
+		log.ExceptionF("BadDataCollector->flush: %s", err.Error())
 	}
 	c.data = c.data[0:0:c.size]
 }
@@ -84,7 +86,7 @@ func (c *BadDataCollector) Put(in interface{}) error {
 	if c.closed {
 		return pkg.ErrCollectorClosed
 	}
-	if en, ok := in.(int64); ok {
+	if en, ok := in.(*entity.BadData); ok {
 		c.tunnel <- en
 		return nil
 	}
@@ -92,8 +94,9 @@ func (c *BadDataCollector) Put(in interface{}) error {
 }
 
 func (c *BadDataCollector) Close() {
-	if !c.closed {
+	var old bool
+	old, c.closed = c.closed, true
+	if !old {
 		close(c.tunnel)
 	}
-	c.closed = true
 }

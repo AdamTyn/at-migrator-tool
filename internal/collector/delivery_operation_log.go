@@ -3,11 +3,10 @@ package collector
 import (
 	"at-migrator-tool/internal/entity"
 	"at-migrator-tool/internal/pkg"
+	"at-migrator-tool/internal/pkg/log"
 	"bytes"
 	"database/sql"
 	"fmt"
-	"log"
-	"os"
 	"time"
 )
 
@@ -24,14 +23,12 @@ type DeliveryOLogCollector struct {
 	tunnel chan *entity.DeliveryOperationLog
 	db     *sql.DB
 	size   int // 采集器最大缓存数
-	logger *log.Logger
 }
 
-func NewDeliveryOLogCollector(size int, db *sql.DB, logger *log.Logger) *DeliveryOLogCollector {
+func NewDeliveryOLogCollector(size int, db *sql.DB) *DeliveryOLogCollector {
 	return &DeliveryOLogCollector{
 		tunnel: make(chan *entity.DeliveryOperationLog, size+1),
 		db:     db,
-		logger: logger,
 		size:   size,
 		data:   make([]*entity.DeliveryOperationLog, 0, size),
 	}
@@ -88,10 +85,8 @@ func (c *DeliveryOLogCollector) flush() {
 		}
 	}
 	_, err := c.db.Exec(buf.String())
-	fmt.Println(buf.String())
 	if err != nil {
-		c.logger.Printf("[Exception] DeliveryOLogCollector->flush: %s\n", err.Error())
-		os.Exit(1)
+		log.ExceptionF("DeliveryOLogCollector->flush: %s", err.Error())
 	}
 	c.data = c.data[0:0:c.size]
 }
@@ -109,8 +104,9 @@ func (c *DeliveryOLogCollector) Put(in interface{}) error {
 }
 
 func (c *DeliveryOLogCollector) Close() {
-	if !c.closed {
+	var old bool
+	old, c.closed = c.closed, true
+	if !old {
 		close(c.tunnel)
 	}
-	c.closed = true
 }

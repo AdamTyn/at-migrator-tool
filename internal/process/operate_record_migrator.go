@@ -6,11 +6,14 @@ import (
 	"at-migrator-tool/internal/contract"
 	"at-migrator-tool/internal/entity"
 	"at-migrator-tool/internal/pkg"
+	"at-migrator-tool/internal/pkg/log"
 	"database/sql"
 	"fmt"
 	"github.com/go-redis/redis"
 	"time"
 )
+
+var operateRecordLt = "2022-01-01 00:00:00"
 
 const OperateRecordMigratorName = "operate-record-migrator"
 
@@ -27,12 +30,17 @@ type OperateRecordMigrator struct {
 }
 
 func NewOperateRecordMigrator(app *internal.Application, dbSource *sql.DB, redisCli *redis.Client) *OperateRecordMigrator {
-	return &OperateRecordMigrator{
+	m := &OperateRecordMigrator{
 		app:      app,
 		dbSource: dbSource,
 		redisCli: redisCli,
 		Cs:       make(map[string]contract.Collector),
 	}
+	if !app.Conf.Migrator.OperateRecord.Enable {
+		log.WarnF("process [%s] not enable", OperateRecordMigratorName)
+		m.closed = true
+	}
+	return m
 }
 
 func (m OperateRecordMigrator) Name() string {
@@ -40,11 +48,16 @@ func (m OperateRecordMigrator) Name() string {
 }
 
 func (m *OperateRecordMigrator) Add(c contract.Collector) *OperateRecordMigrator {
-	m.Cs[c.Name()] = c
+	if !m.closed {
+		m.Cs[c.Name()] = c
+	}
 	return m
 }
 
 func (m *OperateRecordMigrator) Start() {
+	if m.closed {
+		return
+	}
 	m.collectors()
 	m.loadLatestRowId()
 	for k := range m.Cs {
@@ -69,13 +82,14 @@ func (m *OperateRecordMigrator) Start() {
 }
 
 func (m *OperateRecordMigrator) Shutdown() {
-	if !m.closed {
+	var old bool
+	old, m.closed = m.closed, true
+	if !old {
 		for k := range m.Cs {
 			m.Cs[k].Close()
 		}
 	}
-	m.closed = true
-	m.app.Logf("[Notice] process %s shutdown\n", OperateRecordMigratorName)
+	log.NoticeF("process [%s] shutdown", OperateRecordMigratorName)
 }
 
 /**
@@ -103,22 +117,24 @@ func (m *OperateRecordMigrator) loadLatestRowId() {
 	if m.closed {
 		return
 	}
+	defer func() {
+		log.InfoF("m.latestRowId=%d", m.latestRowId)
+	}()
 	// a.0. 先尝试命中redis缓
 	// a.1. 同时延长缓存过期时间
 	cached, _ := m.redisCli.Get(pkg.CKORMigratorLatestRowId).Int64()
-	m.redisCli.Expire(pkg.CKORMigratorException, pkg.CacheORMigratorExpired)
+	m.redisCli.Expire(pkg.CKORMigratorLatestRowId, pkg.CacheORMigratorExpired)
 	if cached > 0 {
 		m.latestRowId = cached
 		return
 	}
 	// b.0. 没有命中redis缓存，直接通过数据源查询最小id
 	// b.1. 只获取leftDatetime之后的数据
-	leftDatetime := "2021-01-01 00:00:00"
 	sqlStr := fmt.Sprintf(
-		"SELECT MIN(id) AS min_id FROM %s WHERE build_time >= '%s';",
-		entity.TableNameOperateRecord, leftDatetime,
+		"SELECT MIN(id) AS min_id FROM %s WHERE build_time>='%s';",
+		entity.TableNameOperateRecord, operateRecordLt,
 	)
-	m.app.Logf("[Info] m.dbSource.QueryRow(sqlStr)=%s\n", sqlStr)
+	log.InfoF("m.dbSource.QueryRow(sqlStr)=%s", sqlStr)
 	row := m.dbSource.QueryRow(sqlStr)
 	if row != nil {
 		var minId int64
@@ -131,7 +147,6 @@ func (m *OperateRecordMigrator) loadLatestRowId() {
 	if m.latestRowId < 1 {
 		m.latestRowId = 1
 	}
-	m.app.Logf("[Info] m.latestRowId=%d\n", m.latestRowId)
 }
 
 /**
@@ -149,15 +164,16 @@ func (m *OperateRecordMigrator) fetch() {
 	fields := "id,user_uuid,company_uuid,op_type,target_type,target_uuid,build_time,status,content"
 	// 设置步长，只用主键索引查询
 	sqlStr := fmt.Sprintf(
-		"SELECT %s FROM %s WHERE id >= %d AND id < %d LIMIT %d;",
+		"SELECT %s FROM %s WHERE id>=%d AND id<%d LIMIT %d;",
 		fields, entity.TableNameOperateRecord, m.latestRowId, newId, fetchStep,
 	)
-	m.app.Logf("[Info] m.dbSource.QueryRow(sqlStr)=%s\n", sqlStr)
+	log.InfoF("m.dbSource.QueryRow(sqlStr)=%s", sqlStr)
 	rows, err0 := m.dbSource.Query(sqlStr)
 	if err0 != nil {
-		m.app.Logf("[Exception] m.dbSource.Query(sqlStr):%s\n", err0.Error())
+		log.ExceptionF("m.dbSource.Query(sqlStr): %s", err0.Error())
 		return
 	}
+	lt := pkg.Str2Time(operateRecordLt)
 	if rows != nil {
 		// 查询结果是否为空
 		empty := true
@@ -166,7 +182,12 @@ func (m *OperateRecordMigrator) fetch() {
 			ent := entity.OperateRecord{}
 			err := rows.Scan(&ent.ID, &ent.UserUUID, &ent.CompanyUUID, &ent.OpType, &ent.TargetType, &ent.TargetUUID, &ent.BuildTime, &ent.Status, &ent.Content)
 			if err != nil {
-				m.app.Logf("[Exception] OperateRecordMigrator->fetch: %s\n", err.Error())
+				log.ExceptionF("OperateRecordMigrator->fetch: %s", err.Error())
+				continue
+			}
+			// 只保留lt之后的数据
+			if ent.BuildTime.Time.Before(lt) {
+				log.NoticeF("OperateRecordMigrator->fetch: id=%d discard", ent.ID)
 				continue
 			}
 			tt := ent.TargetType.String
@@ -179,12 +200,12 @@ func (m *OperateRecordMigrator) fetch() {
 				err = m.collector(col.DeliveryOLogCollectorName).Put(&ent)
 			default:
 				// 需要记录这一部分id到redis
-				err = m.collector(col.BadDataCollectorName).Put(&ent)
+				err = m.collector(col.BadDataCollectorName).Put(&entity.BadData{K: pkg.CKORMigratorException, V: ent.ID})
 			}
 			if err != nil {
 				// 需要记录这一部分id到redis
-				m.app.Logf("[Exception] OperateRecordMigrator->fetch->Put: %s\n", err.Error())
-				_ = m.collector(col.BadDataCollectorName).Put(&ent.ID)
+				log.ExceptionF("OperateRecordMigrator->fetch->Put: %s", err.Error())
+				_ = m.collector(col.BadDataCollectorName).Put(&entity.BadData{K: pkg.CKORMigratorException, V: ent.ID})
 			}
 		}
 		// 判断是否空查询
@@ -210,9 +231,9 @@ func (m *OperateRecordMigrator) isNotEmptyFetch(empty bool) bool {
 				data := make(map[string]interface{})
 				data["msg_type"] = "text"
 				data["content"] = map[string]string{
-					"text": fmt.Sprintf("[at-migrator-tool] OperateRecordMigrator 已经空查询 %d 次了。通知发出时间为:%d", m.emptyFetchNum, ms),
+					"text": fmt.Sprintf("[%s] OperateRecordMigrator 已经空查询 %d 次了。通知发出时间为:%d", m.app.Conf.Name, m.emptyFetchNum, ms),
 				}
-				_ = m.Cs[col.FsRobotCollectorName].Put(data)
+				_ = m.collector(col.FsRobotCollectorName).Put(data)
 			}
 			m.emptyFetchNum = 0
 		}

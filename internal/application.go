@@ -3,7 +3,7 @@ package internal
 import (
 	"at-migrator-tool/internal/conf"
 	"at-migrator-tool/internal/contract"
-	"log"
+	"at-migrator-tool/internal/pkg/log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,25 +16,15 @@ import (
  */
 type Application struct {
 	Conf      *conf.App
-	Logger    *log.Logger
 	processes map[string]contract.Process
 }
 
 func NewApp(c *conf.App) *Application {
 	app := &Application{
-		Logger:    log.Default(),
 		Conf:      c,
 		processes: make(map[string]contract.Process),
 	}
 	return app
-}
-
-func (app Application) Log(msg string) {
-	app.Logger.Println(msg)
-}
-
-func (app Application) Logf(format string, v ...interface{}) {
-	app.Logger.Printf(format, v)
 }
 
 /**
@@ -53,14 +43,14 @@ func (app *Application) Add(p contract.Process) *Application {
  * @description 启动app容器
  */
 func (app *Application) Go() {
-	app.Logf("[Info] app %s start", app.Conf.Name)
+	log.InfoF("app [%s] start", app.Conf.Name)
 	if app.processes == nil || len(app.processes) < 1 {
-		app.Log("[Notice] no process to run, bye bye")
+		log.Notice("no process to run, bye bye!")
 		return
 	}
 	defer func() {
 		if err := recover(); err != nil {
-			app.Logf("[Error] %s", err)
+			log.Error(err)
 		}
 	}()
 	c := make(chan os.Signal)
@@ -71,7 +61,7 @@ func (app *Application) Go() {
 	for {
 		select {
 		case s := <-c:
-			app.Logf("[Notice] get signal %s, app ending...", s)
+			log.NoticeF("get signal [%s], app ending...", s)
 			app.Stop()
 			close(c)
 			return
@@ -85,9 +75,9 @@ func (app *Application) Go() {
  * @description 平滑终止app容器
  */
 func (app *Application) Stop() {
-	app.Log("[Notice] app ending")
+	log.Notice("app ending")
 	for k := range app.processes {
 		app.processes[k].Shutdown()
 	}
-	app.Log("[Notice] app ended")
+	log.Notice("app ended")
 }
